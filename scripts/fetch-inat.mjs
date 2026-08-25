@@ -8,7 +8,7 @@ const CONFIG = {
   siteDescription:
     process.env.SITE_DESCRIPTION ||
     "Wildlife, plants, fungi, and field observations photographed by Saswat Panda.",
-  siteUrl: (process.env.SITE_URL || "").replace(/\/$/, ""),
+  siteUrl: getSiteUrl(),
   siteDomain: process.env.SITE_DOMAIN || "",
   limit: getLimit(),
   concurrency: Number.parseInt(process.env.CONCURRENCY || "8", 10),
@@ -72,6 +72,16 @@ function getLimit() {
   const raw = arg ? arg.split("=")[1] : process.env.LIMIT || "24";
   const limit = Number.parseInt(raw, 10);
   return Number.isFinite(limit) && limit > 0 ? limit : 24;
+}
+
+function getSiteUrl() {
+  if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/$/, "");
+
+  const repository = process.env.GITHUB_REPOSITORY || "";
+  const [owner, repo] = repository.split("/");
+  if (owner && repo) return `https://${owner}.github.io/${repo}`;
+
+  return "";
 }
 
 async function fetchObservations(user, limit) {
