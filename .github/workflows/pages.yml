@@ -24,7 +24,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node scripts/fetch-inat.mjs --limit=120
+      - run: node scripts/fetch-inat.mjs --all
         env:
           SITE_URL: ${{ vars.SITE_URL }}
           SITE_DOMAIN: ${{ vars.SITE_DOMAIN }}

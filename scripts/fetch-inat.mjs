@@ -11,6 +11,7 @@ const CONFIG = {
   siteUrl: (process.env.SITE_URL || "").replace(/\/$/, ""),
   siteDomain: process.env.SITE_DOMAIN || "",
   limit: getLimit(),
+  concurrency: Number.parseInt(process.env.CONCURRENCY || "8", 10),
 };
 
 const root = process.cwd();
@@ -30,12 +31,7 @@ async function main() {
   await mkdir(observationDir, { recursive: true });
 
   const observations = await fetchObservations(CONFIG.user, CONFIG.limit);
-  const pages = [];
-
-  for (const observation of observations) {
-    const page = await buildObservationPage(observation);
-    if (page) pages.push(page);
-  }
+  const pages = (await mapWithConcurrency(observations, CONFIG.concurrency, buildObservationPage)).filter(Boolean);
 
   await writeFile(path.join(siteDir, "index.html"), renderIndex(pages), "utf8");
   await writeFile(path.join(siteDir, "species.html"), renderSpecies(pages), "utf8");
@@ -50,16 +46,37 @@ async function main() {
   console.log(`Built ${pages.length} observation pages in ${siteDir}`);
 }
 
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  const workerCount = Math.max(1, Math.min(concurrency || 8, items.length));
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, worker));
+  return results;
+}
+
 function getLimit() {
+  if (process.argv.includes("--all") || String(process.env.LIMIT || "").toLowerCase() === "all") {
+    return "all";
+  }
+
   const arg = process.argv.find((item) => item.startsWith("--limit="));
   const raw = arg ? arg.split("=")[1] : process.env.LIMIT || "24";
   const limit = Number.parseInt(raw, 10);
-  return Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 24;
+  return Number.isFinite(limit) && limit > 0 ? limit : 24;
 }
 
 async function fetchObservations(user, limit) {
-  const perPage = Math.min(limit, 100);
-  const pages = Math.ceil(limit / perPage);
+  const perPage = 100;
+  const pages = limit === "all" ? Number.POSITIVE_INFINITY : Math.ceil(limit / perPage);
   const results = [];
 
   for (let page = 1; page <= pages; page += 1) {
@@ -77,14 +94,16 @@ async function fetchObservations(user, limit) {
 
     const data = await response.json();
     results.push(...data.results);
+
+    if (limit === "all" && results.length >= data.total_results) break;
   }
 
-  return results.slice(0, limit);
+  return limit === "all" ? results : results.slice(0, limit);
 }
 
 async function buildObservationPage(observation) {
-  const photo = observation.photos?.[0];
-  if (!photo) return null;
+  const photos = observation.photos || [];
+  if (!photos.length) return null;
 
   const commonName =
     observation.taxon?.preferred_common_name ||
@@ -96,15 +115,23 @@ async function buildObservationPage(observation) {
   const safePlace = safePlaceName(observation);
   const state = stateFromPlaceName(safePlace);
   const slug = uniqueSlug(`${commonName}-${observedDate}-${observation.id}`);
-  const photoUrl = bestPhotoUrl(photo);
-  const photoExt = extensionFromUrl(photoUrl);
-  const photoFilename = uniquePhotoFilename(
-    `${seoFileSlug([commonName, observedDate, `${CONFIG.authorName} ${state}`])}.${photoExt}`,
-  );
-  const photoPath = path.join(photoDir, photoFilename);
-  const photoPublicPath = `../../photos/${photoFilename}`;
+  const pagePhotos = [];
 
-  await downloadFile(photoUrl, photoPath);
+  for (const [index, photo] of photos.entries()) {
+    const photoUrl = bestPhotoUrl(photo);
+    const photoExt = extensionFromUrl(photoUrl);
+    const suffix = photos.length > 1 ? `photo ${index + 1}` : "";
+    const photoFilename = uniquePhotoFilename(
+      `${seoFileSlug([commonName, observedDate, suffix, `${CONFIG.authorName} ${state}`])}.${photoExt}`,
+    );
+
+    await downloadFile(photoUrl, path.join(photoDir, photoFilename));
+
+    pagePhotos.push({
+      filename: photoFilename,
+      publicPath: `../../photos/${photoFilename}`,
+    });
+  }
 
   const title = `${titleCase(commonName)} photographed by ${CONFIG.authorName}`;
   const description = [
@@ -126,8 +153,9 @@ async function buildObservationPage(observation) {
     qualityGrade: observation.quality_grade,
     iconicTaxon: observation.taxon?.iconic_taxon_name || "Life",
     inatUrl: observation.uri || `https://www.inaturalist.org/observations/${observation.id}`,
-    photoPublicPath,
-    photoFilename,
+    photos: pagePhotos,
+    photoPublicPath: pagePhotos[0].publicPath,
+    photoFilename: pagePhotos[0].filename,
     alt: `${titleCase(commonName)} photographed by ${CONFIG.authorName}`,
     description,
     urlPath: `/observations/${slug}/`,
@@ -219,9 +247,24 @@ function renderObservation(page) {
         <div><dt>Source</dt><dd><a href="${escapeHtml(page.inatUrl)}">iNaturalist observation ${page.id}</a></dd></div>
       </dl>
     </section>
+    ${renderPhotoGallery(page)}
   </main>
 </body>
 </html>`);
+}
+
+function renderPhotoGallery(page) {
+  if (page.photos.length < 2) return "";
+
+  const items = page.photos
+    .map(
+      (photo, index) => `<a href="${escapeHtml(photo.publicPath)}">
+        <img src="${escapeHtml(photo.publicPath)}" alt="${escapeHtml(`${page.alt}, photo ${index + 1}`)}">
+      </a>`,
+    )
+    .join("");
+
+  return `<section class="gallery" aria-label="Additional photos">${items}</section>`;
 }
 
 function renderIndex(pages) {
@@ -444,6 +487,25 @@ a { color: var(--water); }
   grid-template-columns: minmax(0, 1.45fr) minmax(280px, .75fr);
   gap: 34px;
   align-items: start;
+}
+
+.gallery {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.gallery a {
+  display: block;
+}
+
+.gallery img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #e7ece7;
 }
 
 .photo-frame {

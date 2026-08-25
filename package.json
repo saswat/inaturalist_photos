@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "node scripts/fetch-inat.mjs",
+    "build": "node scripts/fetch-inat.mjs --all",
     "build:preview": "node scripts/fetch-inat.mjs --limit=12"
   }
 }

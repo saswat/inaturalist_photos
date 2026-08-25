@@ -4,7 +4,7 @@ Static archive generator for mirroring public iNaturalist observations to a GitH
 
 ## What it does
 
-- Fetches public observations for `saswat`.
+- Fetches all public observations for `saswat`.
 - Downloads local copies of observation photos.
 - Creates one SEO-friendly HTML page per observation.
 - Creates index, species, and sitemap pages.
@@ -17,13 +17,13 @@ Static archive generator for mirroring public iNaturalist observations to a GitH
 From this folder:
 
 ```powershell
-node scripts/fetch-inat.mjs --limit=24
+node scripts/fetch-inat.mjs --all
 ```
 
 If `node` is not on PATH in Codex, use the bundled Node path:
 
 ```powershell
-C:\Users\saswa\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe scripts\fetch-inat.mjs --limit=24
+C:\Users\saswa\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe scripts\fetch-inat.mjs --all
 ```
 
 The generated website appears in `site/`.
