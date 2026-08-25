@@ -24,6 +24,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - run: node scripts/fetch-inat.mjs --all
         env:
           SITE_URL: ${{ vars.SITE_URL }}
