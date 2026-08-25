@@ -1,0 +1,10 @@
+{
+  "name": "saswat-inaturalist-archive",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/fetch-inat.mjs",
+    "build:preview": "node scripts/fetch-inat.mjs --limit=12"
+  }
+}
